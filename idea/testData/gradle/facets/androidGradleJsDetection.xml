@@ -1,0 +1,6 @@
+<!-- !RELATIVE_PATH: android-module/src/main/AndroidManifest.xml -->
+
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+          xmlns:tools="http://schemas.android.com/tools"
+          package="my.test.project" >
+</manifest>

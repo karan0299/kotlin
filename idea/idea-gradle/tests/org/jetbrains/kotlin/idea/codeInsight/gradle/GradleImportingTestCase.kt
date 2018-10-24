@@ -42,6 +42,7 @@ import org.gradle.wrapper.GradleWrapperMain
 import org.intellij.lang.annotations.Language
 import org.jetbrains.annotations.NonNls
 import org.jetbrains.kotlin.idea.test.PluginTestCaseBase
+import org.jetbrains.kotlin.test.KotlinTestUtils
 import org.jetbrains.plugins.gradle.settings.DistributionType
 import org.jetbrains.plugins.gradle.settings.GradleProjectSettings
 import org.jetbrains.plugins.gradle.settings.GradleSettings
@@ -111,6 +112,57 @@ abstract class GradleImportingTestCase : ExternalSystemImportingTestCase() {
             FileUtil.delete(BuildManager.getInstance().buildSystemDirectory.toFile())
         } finally {
             super.tearDown()
+        }
+    }
+
+    /**
+     * Creates test project, consisting of:
+     * - file at [mainBuildFilePath]
+     * - all other files in the same directory and with the same name as the main build file
+     * - destination of those files in test project is determined *by the directives in file content*, not by its physical location
+     *   (see [loadFileIntoTestProject])
+     */
+    open fun doTest(mainBuildFilePath: String) {
+        val buildFile = File(mainBuildFilePath)
+        val testDir = File(buildFile.parent)
+        val testName = buildFile.nameWithoutExtension
+        val otherFilesToLoad = testDir.listFiles().filter { it.name.startsWith(testName) }
+
+        val configuration = loadTestConfiguration(buildFile)
+
+        loadFileIntoTestProject(buildFile)
+        otherFilesToLoad.forEach { loadFileIntoTestProject(it) }
+
+        myProjectSettings.isResolveModulePerSourceSet = configuration.resolveModulePerSourceSet
+
+        importProject()
+    }
+
+    data class FacetImportingTestConfiguration(val resolveModulePerSourceSet: Boolean)
+
+    private fun loadTestConfiguration(file: File): FacetImportingTestConfiguration {
+        val fileText = KotlinTestUtils.doLoadFile(file)
+        val resolveModulePerSourceSet = fileText.lines().any { it.startsWith("// !RESOLVE_MODULE_PER_SOURCE_SET") }
+        return FacetImportingTestConfiguration(resolveModulePerSourceSet)
+    }
+
+    private fun loadFileIntoTestProject(file: File) {
+        val buildFileText = KotlinTestUtils.doLoadFile(file)
+        val targetRelativePath = buildFileText.lines()
+            .singleOrNull { it.contains("!RELATIVE_PATH: ") }
+            ?.substringAfter("!RELATIVE_PATH: ")
+            ?.removeSuffix(determineClosingCommentStringForLanguage(file))
+        requireNotNull(targetRelativePath) { "Can't find '!RELATIVE_PATH' directive in test" }
+
+        createProjectSubFile("build.gradle", buildFileText)
+    }
+
+    private fun determineClosingCommentStringForLanguage(file: File): String {
+        val extension = file.extension
+        return when (extension) {
+            "kt", "java", "gradle", "properties" -> ""
+            "xml" -> "-->" // Fuck you, xml
+            else -> throw IllegalArgumentException("Unknown extension $extension")
         }
     }
 
